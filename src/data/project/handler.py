@@ -4,7 +4,6 @@ import os
 from typing import Type
 
 import openpyxl
-from cx_Oracle import Connection, DatabaseError
 from openpyxl import Workbook
 
 from data.project.base import Entity, Dataset
@@ -48,6 +47,7 @@ class CSVHandler:
         :return: nothing
         """
         file_name = file_name if file_name is not None else entities[0].collection_name()
+
 
         with open(os.path.join(path, file_name + extension), "w", newline="", encoding="utf-8") as file:
             writer = csv.DictWriter(file, fieldnames=entities[0].field_names(), delimiter=delimiter)
@@ -251,111 +251,3 @@ class XLSXHandler:
         wb.remove(wb["Sheet"])
         wb.save(os.path.join(path, "dataset.xlsx"))
 
-
-class SQLHandler:
-    """
-    A class that handles a MySQL connection.
-    """
-
-    @staticmethod
-    def read_entity(entity_type: Type[Entity], connection: Connection, table_name: str = None) -> list[Entity]:
-        """
-        Reads entries from a database table.
-
-        :param entity_type: the type of entries
-        :param connection: the database connection
-        :param table_name: the name of the database table
-        :return: the list of elements
-        """
-
-        table_name = table_name if table_name is not None else entity_type.collection_name()
-
-        cursor = connection.cursor()
-        cursor.execute(f"SELECT * FROM {table_name}")
-        result = [entity_type.from_sequence(row) for row in cursor.fetchall()]
-        cursor.close()
-        return result
-
-    @staticmethod
-    def write_entity(entities: list[Entity], connection: Connection, table_name: str = None,
-                     create: bool = True) -> None:
-        """
-        Writes entries to an XLSX document.
-
-        :param entities: the entries
-        :param connection: the database connection
-        :param table_name: the name of the database table
-        :param create: tells whether the table should be created (and a previous instance should be dropped)
-        :return: nothing
-        """
-
-        table_name = table_name if table_name is not None else entities[0].collection_name()
-
-        def get_insert_command(entity_name: str, field_names: list[str]) -> str:
-            """
-            Returns an INSERT INTO statement.
-
-            :param entity_name: the name of the entity (table)
-            :param field_names: the name of the fields
-            :return: the statement
-            """
-
-            placeholder = ", ".join([f":{i+1}" for i in range(len(field_names))])
-            field_names = ", ".join(field_names)
-
-            return f"INSERT INTO {entity_name} ({field_names}) VALUES ({placeholder})"
-
-        cursor = connection.cursor()
-        if create:
-            try:
-                cursor.execute(f"DROP TABLE {table_name} PURGE")
-            except DatabaseError:
-                pass
-
-            cursor.execute(entities[0].create_table())
-
-        cursor.executemany(get_insert_command(table_name, entities[0].field_names()),
-                           [entity.to_sequence() for entity in entities])
-
-        connection.commit()
-        cursor.close()
-
-    @staticmethod
-    def read_dataset(dataset_type: Type[Dataset], connection: Connection) -> Dataset:
-        """
-        Reads a dataset from a MySQL database.
-
-        :param dataset_type: the type of the dataset
-        :param connection: the database connection
-        :return: the instance
-        """
-
-        return dataset_type.from_sequence(
-            [
-                SQLHandler.read_entity(entity_type, connection, table_name=entity_type.collection_name())
-                for entity_type in dataset_type.entity_types()
-            ]
-        )
-
-    @staticmethod
-    def write_dataset(dataset: Dataset, connection: Connection) -> None:
-        """
-        Writes a dataset to to a MySQL database.
-
-        :param dataset: the dataset instance
-        :param connection: the database connection
-        :return: nothing
-        """
-
-        cursor = connection.cursor()
-        for entity_type in reversed(dataset.entity_types()):
-            try:
-                cursor.execute(f"DROP TABLE {entity_type.collection_name()} PURGE")
-            except DatabaseError:
-                pass
-
-        for entity_type in dataset.entity_types():
-            SQLHandler.write_entity(dataset.entities()[entity_type], connection,
-                                    table_name=entity_type.collection_name())
-
-        cursor.execute("COMMIT")

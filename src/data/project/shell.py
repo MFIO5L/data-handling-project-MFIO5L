@@ -1,12 +1,8 @@
 import getpass
 import sys
 
-import cx_Oracle
-
-from data.project.handler import CSVHandler, JSONHandler, XLSXHandler, SQLHandler
-from data.project.model import RentalDataset
-
-cx_Oracle.init_oracle_client(lib_dir=r"C:\instantclient_21_7")  # TODO check it
+from data.project.handler import CSVHandler, JSONHandler, XLSXHandler
+from data.project.model import Cash
 
 
 def help_message() -> str:
@@ -42,7 +38,7 @@ Commands:
 """
 
 
-def get_connection() -> cx_Oracle.Connection:
+def get_connection():
     """
     Reads properties of a MySQL connection, then creates the connection.
     :return: the connection
@@ -56,12 +52,6 @@ def get_connection() -> cx_Oracle.Connection:
     print("$", end=" ")
     password = getpass.getpass(stream=sys.stdin, prompt="")
 
-    return cx_Oracle.connect(
-        user=user,
-        password=password,
-        dsn="codd.inf.unideb.hu:1521/ora21cp.inf.unideb.hu"
-    )
-
 
 def main() -> None:
     """
@@ -71,23 +61,19 @@ def main() -> None:
     """
     print(help_message())
 
-    connection = get_connection()  # TODO put this in comment if you don't need a database connection
-
     dataset = None
-    dataset_type = RentalDataset  # TODO: change this to your own type
+    dataset_type = Cash  # TODO: change this to your own type
 
     writers = {
         "csv": lambda t: CSVHandler.write_dataset(dataset, t[2]),
         "xlsx": lambda t: XLSXHandler.write_dataset(dataset, t[2]),
-        "json": lambda t: JSONHandler.write_dataset(dataset, t[2]),
-        "sql": lambda t: SQLHandler.write_dataset(dataset, connection)
+        "json": lambda t: JSONHandler.write_dataset(dataset, t[2])
     }
 
     readers = {
         "csv": lambda t: CSVHandler.read_dataset(dataset_type, t[2]),
         "xlsx": lambda t: XLSXHandler.read_dataset(dataset_type, t[2]),
-        "json": lambda t: JSONHandler.read_dataset(dataset_type, t[2]),
-        "sql": lambda t: SQLHandler.read_dataset(dataset_type, connection)
+        "json": lambda t: JSONHandler.read_dataset(dataset_type, t[2])
     }
 
     while True:
@@ -96,12 +82,11 @@ def main() -> None:
         tokens = line.split(" ")
         match tokens:
             case ["exit"]:
-                connection.close()
                 break
             case ["help"]:
                 print(help_message())
-            case ["generate", _, _, _, _]:
-                dataset = dataset_type.generate(int(tokens[1]), int(tokens[2]), int(tokens[3]), int(tokens[4]))
+            case ["generate", _, _]:
+                dataset = dataset_type.generate(int(tokens[1]), int(tokens[2]))
             case ["write", ("csv" | "xlsx" | "json") as doc_type, _]:
                 writers[doc_type](tokens)
             case ["write", "sql"]:
